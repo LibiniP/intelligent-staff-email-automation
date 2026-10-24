@@ -177,3 +177,84 @@ def test_approve_without_rule_row_still_schedules(db):
     db.commit()
     services.approve(db, d.id, "hr")
     assert d.status == "scheduled" and d.scheduled_for.hour == 9
+
+
+# ---- bug-fix regressions ----
+def test_template_typo_never_becomes_a_draft(db):
+    from app.models import AuditLog, Template
+
+    t = db.query(Template).filter_by(occasion="silver_jubilee").one()
+    t.body = "Dear $nmae, well done."
+    db.commit()
+    add_staff(db, joining_date=date(2001, 6, 1))
+    assert services.scan_and_draft(db, date(2026, 5, 30)) == []
+    assert db.query(Draft).count() == 0
+    assert db.query(AuditLog).filter_by(action="generation_failed").count() == 1
+
+
+def test_parallel_duplicate_does_not_undo_other_drafts(db, monkeypatch):
+    """Another scan inserts B's draft after our duplicate check but before our insert."""
+    from sqlalchemy import insert
+
+    from app import personalize
+
+    add_staff(db, employee_id="A", joining_date=date(2001, 6, 1))
+    b = add_staff(db, employee_id="B", joining_date=date(2016, 6, 1), email="b@example.test")
+    real = personalize.draft_email
+
+    def racing(tmpl, staff, occ):
+        if staff.id == b.id:  # collide on the second one, while A's draft is still uncommitted
+            db.execute(insert(Draft).values(staff_id=b.id, occasion=occ.kind, occasion_year=occ.year,
+                                            occasion_date=occ.on, subject="x", body="x", status="pending"))
+        return real(tmpl, staff, occ)
+
+    monkeypatch.setattr(services, "draft_email", racing)
+    created = services.scan_and_draft(db, date(2026, 5, 30))
+    assert [d.staff_id for d in created] == [1]
+    assert db.query(Draft).count() == 2  # A's draft survived B's collision
+
+
+def test_crash_mid_dispatch_keeps_earlier_sends_marked(db, monkeypatch):
+    add_staff(db, employee_id="A", joining_date=date(2001, 6, 1))
+    add_staff(db, employee_id="B", joining_date=date(2016, 6, 1), email="b@example.test")
+    services.scan_and_draft(db, date(2026, 5, 30))
+    for d in db.query(Draft):
+        services.approve(db, d.id, "hr")
+    calls = []
+
+    def flaky(to, *a, **k):
+        calls.append(to)
+        if len(calls) == 2:
+            raise KeyboardInterrupt  # process killed mid-loop
+    monkeypatch.setattr(graph, "send_mail", flaky)
+    with pytest.raises(KeyboardInterrupt):
+        services.dispatch_due(db, datetime(2026, 6, 2))
+    db.rollback()
+    assert db.query(Draft).filter_by(status="sent").count() == 1
+
+
+def test_api_validation_and_auth(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from app import db as dbmod, main
+
+    engine = make_engine(f"sqlite:///{tmp_path}/api.db")
+    monkeypatch.setattr(main, "engine", engine)
+    S = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(main, "SessionLocal", S)
+
+    def get_db():
+        with S() as s:
+            yield s
+    main.app.dependency_overrides[dbmod.get_db] = get_db
+    try:
+        with TestClient(main.app) as c:
+            hr = {"X-User": "t", "X-Role": "hr"}
+            assert c.get("/api/drafts").status_code == 401
+            bad_rule = {"enabled": True, "days_ahead": 7, "requires_approval": True, "send_hour": 25}
+            assert c.put("/api/rules/birthday", json=bad_rule, headers=hr).status_code == 422
+            assert c.put("/api/templates/1", json={"subject": "Hi $name", "body": "Dear $nmae"}, headers=hr).status_code == 422
+            assert c.put("/api/templates/1", json={"subject": "Hi $name", "body": "Dear $name"}, headers=hr).status_code == 200
+            assert c.get("/api/upcoming?days=5000", headers=hr).status_code == 422
+    finally:
+        main.app.dependency_overrides.clear()
+        engine.dispose()

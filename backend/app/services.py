@@ -1,6 +1,5 @@
 """Pipeline: scan -> draft -> approve -> schedule -> send. Every step is audited."""
 from datetime import date, datetime, time
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -8,12 +7,8 @@ from sqlalchemy.orm import Session
 
 from . import config, graph
 from .milestones import occasions_for
-from .models import AuditLog, Draft, Rule, Staff, Template
-from .personalize import draft_email
-
-
-def local_now() -> datetime:
-    return datetime.now(ZoneInfo(config.TIMEZONE)).replace(tzinfo=None)
+from .models import AuditLog, Draft, Rule, Staff, Template, local_now
+from .personalize import TemplateError, draft_email
 
 
 def today() -> date:
@@ -44,16 +39,21 @@ def scan_and_draft(db: Session, today: date, actor: str = "system") -> list[Draf
             )
             if exists:
                 continue
-            subject, body, by = draft_email(tmpl, staff, occ)
+            try:
+                subject, body, by = draft_email(tmpl, staff, occ)
+            except TemplateError as e:
+                # never create a broken draft; leave a trace so HR can fix the template
+                audit(db, None, actor, "generation_failed", f"{occ.kind} template {tmpl.id}: {e}")
+                continue
             draft = Draft(
                 staff_id=staff.id, occasion=occ.kind, occasion_year=occ.year, occasion_date=occ.on,
                 subject=subject, body=body, generated_by=by,
             )
-            db.add(draft)
             try:
-                db.flush()
+                # savepoint: a duplicate from a parallel scan must not undo this scan's other drafts
+                with db.begin_nested():
+                    db.add(draft)
             except IntegrityError:
-                db.rollback()
                 continue
             audit(db, draft.id, actor, "generated", f"by={by}")
             created.append(draft)
@@ -132,5 +132,7 @@ def dispatch_due(db: Session, now: datetime | None = None) -> int:
         except Exception as exc:
             draft.status, draft.error = "failed", str(exc)[:500]
             audit(db, draft.id, "system", "failed", str(exc)[:200])
+        # commit each one: a crash later in the loop must not cause a resend of mail already gone
+        db.commit()
     db.commit()
     return sent

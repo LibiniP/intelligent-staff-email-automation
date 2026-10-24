@@ -40,7 +40,7 @@ CLI: `python -m app.cli init-db | import-csv FILE | scan | dispatch`.
 
 ## Rules that must not break
 
-1. **Never invent facts.** Emails use only fields from the DB. Any new template variable must come from `build_context`. `guard()` rejects drafts with unverified numbers or a missing name; keep it strict.
+1. **Never invent facts.** Emails use only fields from the DB. Template placeholders are limited to `ALLOWED_FIELDS` in `personalize.py` (`$name $department $designation $years $duration`); a new one must be added there and filled in `build_context`. Unknown placeholders are rejected on template save and at draft time. `guard()` rejects AI output with unverified numbers or a missing name; keep it strict.
 2. **Human approval** for `ALWAYS_REVIEW` occasions (retirement, promotion, silver_jubilee) regardless of rule settings.
 3. **No duplicates.** The `Draft` unique constraint (staff, occasion, year) is the backstop. Do not remove it.
 4. **Audit everything.** Each state change calls `services.audit`. Do not log full emails or other PII in audit detail; the API masks recipient addresses.

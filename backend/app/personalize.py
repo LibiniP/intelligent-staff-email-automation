@@ -31,6 +31,20 @@ def build_context(staff, occ: Occasion) -> dict:
     return ctx
 
 
+ALLOWED_FIELDS = {"name", "department", "designation", "years", "duration"}
+PLACEHOLDER = re.compile(r"\$\{?(\w+)\}?")
+
+
+class TemplateError(ValueError):
+    pass
+
+
+def check_template(subject: str, body: str) -> list[str]:
+    """Placeholders that no context can ever fill (typos, invented fields)."""
+    used = set(PLACEHOLDER.findall(subject + "\n" + body))
+    return sorted(used - ALLOWED_FIELDS)
+
+
 def render(template, ctx: dict) -> tuple[str, str]:
     subject = StrTemplate(template.subject).safe_substitute(ctx)
     body = StrTemplate(template.body).safe_substitute(ctx)
@@ -78,6 +92,9 @@ def draft_email(template, staff, occ: Occasion) -> tuple[str, str, str]:
     """Return (subject, body, generated_by). Falls back to the template on guard failure."""
     ctx = build_context(staff, occ)
     subject, body = render(template, ctx)
+    left = PLACEHOLDER.findall(subject + "\n" + body)
+    if left:
+        raise TemplateError(f"unfilled placeholder(s): {', '.join(sorted(set(left)))}")
     polished = _llm_polish(subject, body, ctx, occ.kind)
     if polished and not guard(polished, ctx):
         return subject, polished, "llm"

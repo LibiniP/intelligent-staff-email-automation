@@ -15,9 +15,11 @@ class User:
         self.name, self.role = name, role
 
 
-def current_user(x_user: str = Header("dev"), x_role: str = Header("admin")) -> User:
+def current_user(x_user: str | None = Header(None), x_role: str | None = Header(None)) -> User:
     if os.environ.get("AUTH_DEV", "1") != "1":
         raise HTTPException(501, "Entra ID auth not wired yet")
+    if not x_user or not x_role:
+        raise HTTPException(401, "X-User and X-Role headers required")
     if x_role not in ROLES:
         raise HTTPException(403, "unknown role")
     return User(x_user, x_role)

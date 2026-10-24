@@ -1,13 +1,16 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
+from . import config
 from .db import Base
 
 
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+def local_now() -> datetime:
+    """Naive local time in config.TIMEZONE. All stored timestamps use this, so they line up."""
+    return datetime.now(ZoneInfo(config.TIMEZONE)).replace(tzinfo=None)
 
 
 class Staff(Base):
@@ -67,7 +70,7 @@ class Draft(Base):
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     generated_by: Mapped[str] = mapped_column(String(20), default="template")
     error: Mapped[str | None] = mapped_column(Text, default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=local_now)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
 
 
@@ -79,4 +82,4 @@ class AuditLog(Base):
     actor: Mapped[str] = mapped_column(String(80))
     action: Mapped[str] = mapped_column(String(40))
     detail: Mapped[str | None] = mapped_column(Text, default=None)
-    at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    at: Mapped[datetime] = mapped_column(DateTime, default=local_now)

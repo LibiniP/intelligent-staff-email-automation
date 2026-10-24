@@ -1,9 +1,9 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,7 @@ from . import services
 from .auth import User, require
 from .db import Base, SessionLocal, engine, get_db
 from .milestones import occasions_for
+from .personalize import check_template
 from .models import AuditLog, Draft, Rule, Staff, Template
 from .seed import seed_defaults, seed_demo_staff
 
@@ -56,8 +57,8 @@ def list_drafts(status: str | None = None, db: Session = Depends(get_db),
 
 
 class EditBody(BaseModel):
-    subject: str
-    body: str
+    subject: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1)
 
 
 def _act(fn, *args):
@@ -104,7 +105,7 @@ def dispatch(db: Session = Depends(get_db), _: User = Depends(require("hr"))):
 
 # ---- upcoming, rules, templates, audit, analytics ----
 @app.get("/api/upcoming")
-def upcoming(days: int = 30, db: Session = Depends(get_db), _: User = Depends(require("hr", "reviewer", "coordinator"))):
+def upcoming(days: int = Query(30, ge=0, le=365), db: Session = Depends(get_db), _: User = Depends(require("hr", "reviewer", "coordinator"))):
     out = []
     for s in db.scalars(select(Staff).where(Staff.active)):
         for o in occasions_for(s, services.today(), days):
@@ -120,9 +121,9 @@ def rules(db: Session = Depends(get_db), _: User = Depends(require("hr"))):
 
 class RuleBody(BaseModel):
     enabled: bool
-    days_ahead: int
+    days_ahead: int = Field(ge=0, le=365)
     requires_approval: bool
-    send_hour: int
+    send_hour: int = Field(ge=0, le=23)
 
 
 @app.put("/api/rules/{occasion}")
@@ -143,8 +144,8 @@ def templates(db: Session = Depends(get_db), _: User = Depends(require("hr"))):
 
 
 class TemplateBody(BaseModel):
-    subject: str
-    body: str
+    subject: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1)
 
 
 @app.put("/api/templates/{template_id}")
@@ -152,6 +153,9 @@ def update_template(template_id: int, body: TemplateBody, db: Session = Depends(
     t = db.get(Template, template_id)
     if not t:
         raise HTTPException(404, "no such template")
+    bad = check_template(body.subject, body.body)
+    if bad:
+        raise HTTPException(422, f"unknown placeholder(s): {', '.join(bad)}. Allowed: name, department, designation, years, duration")
     t.subject, t.body, t.version = body.subject, body.body, t.version + 1
     services.audit(db, None, u.name, "template_updated", f"{t.occasion} v{t.version}")
     db.commit()
@@ -159,7 +163,7 @@ def update_template(template_id: int, body: TemplateBody, db: Session = Depends(
 
 
 @app.get("/api/audit")
-def audit_log(limit: int = 100, db: Session = Depends(get_db), _: User = Depends(require("hr"))):
+def audit_log(limit: int = Query(100, ge=1, le=1000), db: Session = Depends(get_db), _: User = Depends(require("hr"))):
     rows = db.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(limit))
     return [{"draft_id": a.draft_id, "actor": a.actor, "action": a.action, "detail": a.detail,
              "at": a.at.isoformat()} for a in rows]

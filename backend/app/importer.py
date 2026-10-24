@@ -12,7 +12,7 @@ ALIASES = {
     "employee_id": ["employee_id", "emp_id", "empid", "staff_id", "id", "employee_code"],
     "name": ["name", "full_name", "employee_name", "staff_name"],
     "preferred_name": ["preferred_name", "nickname", "known_as"],
-    "email": ["email", "email_id", "official_email", "mail"],
+    "email": ["email", "e_mail", "email_id", "email_address", "official_email", "mail"],
     "department": ["department", "dept", "school", "school_department"],
     "designation": ["designation", "role", "position", "title"],
     "joining_date": ["joining_date", "date_of_joining", "doj", "join_date", "joined"],
