@@ -21,7 +21,7 @@ SUBJECT_FALLBACK = {
 def build_context(staff, occ: Occasion) -> dict:
     """Verified facts only. Anything not here cannot appear in an email."""
     ctx = {
-        "name": staff.preferred_name or staff.name,
+        "name": staff.preferred_name or " ".join(p for p in (staff.title, staff.name) if p),
         "department": staff.department,
         "designation": staff.designation,
     }

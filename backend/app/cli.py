@@ -1,9 +1,9 @@
-"""python -m app.cli <init-db | import-csv FILE | scan | dispatch>"""
+"""python -m app.cli <init-db | import-csv FILE.csv|FILE.xlsx | scan | dispatch>"""
 import sys
 
 from . import services
-from .db import Base, SessionLocal, engine
-from .importer import import_csv
+from .db import Base, SessionLocal, engine, ensure_columns
+from .importer import import_file
 from .seed import seed_defaults
 
 
@@ -12,6 +12,7 @@ def main(argv: list[str]) -> int:
         print(__doc__)
         return 1
     Base.metadata.create_all(engine)
+    ensure_columns(engine)
     with SessionLocal() as db:
         seed_defaults(db)
         cmd = argv[0]
@@ -21,10 +22,10 @@ def main(argv: list[str]) -> int:
             if len(argv) < 2:
                 print("usage: import-csv FILE")
                 return 1
-            r = import_csv(db, argv[1])
+            r = import_file(db, argv[1])
             print(f"created {r['created']}, updated {r['updated']}, skipped {len(r['errors'])}")
-            for line, why in r["errors"]:
-                print(f"  line {line}: {why}")
+            for where, why in r["errors"]:
+                print(f"  {where}: {why}")
         elif cmd == "scan":
             print(f"{len(services.scan_and_draft(db, services.today(), 'cli'))} new draft(s)")
         elif cmd == "dispatch":

@@ -258,3 +258,93 @@ def test_api_validation_and_auth(monkeypatch, tmp_path):
     finally:
         main.app.dependency_overrides.clear()
         engine.dispose()
+
+
+def test_excel_multi_sheet_import(db, tmp_path):
+    import openpyxl
+    from app.importer import import_file
+
+    wb = openpyxl.Workbook()
+    head = ["staff_id", "title", "first_name", "last_name", "category", "designation", "department",
+            "date_of_birth", "joining_date", "employment_status", "email", "opt_out"]
+    ws = wb.active
+    ws.title = "FACULTY"
+    ws.append(head)
+    ws.append(["F1", "Dr.", "Kavi", "Toor", "FACULTY", "Professor", "Physics", "1980-01-02", "2001-06-01", "ACTIVE", "k@example.test", "N"])
+    ws.append(["F2", "Mr.", "Old", "Timer", "FACULTY", "Professor", "Physics", "1960-01-02", date(1990, 6, 1), "RETIRED", "o@example.test", "N"])
+    ws2 = wb.create_sheet("ADMIN")
+    ws2.append(head)
+    ws2.append(["A1", "Ms.", "Ann", "Clerk", "ADMIN", "Clerk", "Registrar", "1990-03-03", "2015-01-01", "ON_LEAVE", "a@example.test", "Y"])
+    wb.create_sheet("README").append(["Notes", None])
+    path = tmp_path / "s.xlsx"
+    wb.save(path)
+
+    r = import_file(db, str(path))
+    assert (r["created"], r["errors"]) == (3, [])
+    by = {s.employee_id: s for s in db.query(Staff)}
+    assert by["F1"].name == "Kavi Toor" and by["F1"].title == "Dr." and by["F1"].category == "FACULTY"
+    assert by["F2"].active is False and by["F2"].joining_date == date(1990, 6, 1)  # retired: no emails
+    assert by["A1"].active is True and by["A1"].opted_out is True  # on leave still active; opt-out honoured
+    services.scan_and_draft(db, date(2026, 5, 30))
+    d = db.query(Draft).one()
+    assert d.occasion == "silver_jubilee" and "Dr. Kavi Toor" in d.body
+
+
+def test_nothing_after_retirement_date_but_retirement_itself_is_found():
+    p = person(date(2001, 6, 1), birth=date(1966, 11, 5), retire=date(2026, 10, 31))
+    kinds = [(o.kind, o.on) for o in occasions_for(p, date(2026, 10, 24), 20)]
+    assert kinds == [("retirement", date(2026, 10, 31))]  # Nov 5 birthday is after retiring: dropped
+    # a milestone landing on the retirement day itself is still wished
+    q = person(date(2001, 10, 31), retire=date(2026, 10, 31))
+    assert {o.kind for o in occasions_for(q, date(2026, 10, 24), 10)} == {"silver_jubilee", "retirement"}
+    # long after retiring: nothing at all
+    assert occasions_for(p, date(2027, 10, 1), 60) == []
+
+
+def test_retirement_draft_needs_approval_and_uses_service_years(db):
+    add_staff(db, joining_date=date(2001, 6, 1), retirement_date=date(2026, 10, 31))
+    services.scan_and_draft(db, date(2026, 10, 24))
+    d = db.query(Draft).filter_by(occasion="retirement").one()
+    assert d.status == "pending" and "25 years" in d.body
+
+
+def test_old_database_gets_new_columns(tmp_path):
+    from sqlalchemy import inspect, text
+    from app.db import ensure_columns
+
+    engine = make_engine(f"sqlite:///{tmp_path}/old.db")
+    with engine.begin() as c:  # a staff table from before title/category/employment_status existed
+        c.execute(text("CREATE TABLE staff (id INTEGER PRIMARY KEY, employee_id VARCHAR(32), name VARCHAR(120), "
+                       "preferred_name VARCHAR(120), email VARCHAR(200), department VARCHAR(120), "
+                       "designation VARCHAR(120), joining_date DATE, birth_date DATE, retirement_date DATE, "
+                       "active BOOLEAN, opted_out BOOLEAN)"))
+        c.execute(text("INSERT INTO staff (employee_id,name,email,department,designation,joining_date,active,opted_out) "
+                       "VALUES ('E1','Old','o@example.test','Phys','Lect','2000-01-01',1,0)"))
+    ensure_columns(engine)
+    cols = {c["name"] for c in inspect(engine).get_columns("staff")}
+    assert {"title", "category", "employment_status"} <= cols
+    S = sessionmaker(bind=engine)()
+    assert S.query(Staff).one().title is None  # old row still readable
+    S.close()
+    engine.dispose()
+
+
+def test_bad_second_sheet_keeps_nothing_and_float_ids_clean(db, tmp_path):
+    import openpyxl
+    from app.importer import import_file
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "A"
+    ws.append(["staff_id", "first_name", "last_name", "email", "department", "designation", "joining_date"])
+    ws.append([10051.0, "N", "I", "n@example.test", "Phys", "Lect", "2001-06-01"])
+    wb.create_sheet("B").append(["staff_id", "first_name"])
+    path = tmp_path / "s.xlsx"
+    wb.save(path)
+    with pytest.raises(ValueError, match="missing columns"):
+        import_file(db, str(path))
+    assert db.query(Staff).count() == 0  # sheet A rolled back with the failure
+    del wb["B"]
+    wb.save(path)
+    import_file(db, str(path))
+    assert db.query(Staff).one().employee_id == "10051"

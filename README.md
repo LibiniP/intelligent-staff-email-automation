@@ -76,14 +76,14 @@ In `.env`, set `DATABASE_URL=postgresql+psycopg://staff:staff@localhost:5432/sta
 
 ### Load the staff data
 
-Save the Excel sheet as CSV (File > Save As > CSV UTF-8), put it in `data/` (that folder is gitignored, so real staff data stays off GitHub), then:
+Put the staff file in `data/` (that folder is gitignored, so real staff data stays off GitHub). Excel `.xlsx` works directly: every sheet with a `staff_id` column is read (README sheets are skipped). A plain CSV works too. Then:
 
 ```bash
 .venv/bin/python -m app.cli init-db
-.venv/bin/python -m app.cli import-csv ../data/staff.csv
+.venv/bin/python -m app.cli import-csv ../data/staff_dataset.xlsx
 ```
 
-Required columns: employee id, name, email, department, designation, joining date. Optional: preferred name, birth date, retirement date, opted out. Common header names (DOJ, DOB, Dept, Emp ID...) are recognised; see `ALIASES` in `backend/app/importer.py`. Dates like `2001-06-01` and `01/06/2001` both work. Re-running updates existing people. Bad rows are skipped and listed.
+Required columns: employee id (`staff_id`), name (or `first_name` + `last_name`), email, department, designation, joining date. Optional: title (Dr./Prof.), category, employment status, preferred name, birth date, retirement date, opt out (Y/N). Only `ACTIVE` and `ON_LEAVE` staff get emails; `RETIRED` and `RESIGNED` are kept but skipped. Common header names (DOJ, DOB, Dept, Emp ID...) are recognised; see `ALIASES` in `backend/app/importer.py`. Dates like `2001-06-01` and `01/06/2001` both work. Re-running updates existing people. Older databases get any new columns added automatically on startup. Bad rows are skipped and listed.
 
 Then `.venv/bin/uvicorn app.main:app --reload`, or `python -m app.cli scan` / `dispatch`.
 

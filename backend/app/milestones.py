@@ -57,7 +57,10 @@ def occasions_for(staff, today: date, days_ahead: int) -> list[Occasion]:
                 found.append(Occasion("joining_anniversary", d, year, n))
 
     r = staff.retirement_date
-    if r and in_window(r):
-        found.append(Occasion("retirement", r, r.year, years_of_service(staff.joining_date, r)))
+    if r:
+        # after the retirement date nobody gets birthday/anniversary mail, even if the status is stale
+        found = [o for o in found if o.on <= r]
+        if in_window(r):
+            found.append(Occasion("retirement", r, r.year, years_of_service(staff.joining_date, r)))
 
     return sorted(found, key=lambda o: (o.on, o.kind))

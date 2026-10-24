@@ -17,7 +17,7 @@ docker compose up -d            # Postgres; set DATABASE_URL to the postgresql+p
 cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m pytest      # must pass before any change is done
 .venv/bin/python -m app.cli init-db
-.venv/bin/python -m app.cli import-csv ../data/staff.csv
+.venv/bin/python -m app.cli import-csv ../data/staff_dataset.xlsx
 .venv/bin/uvicorn app.main:app --reload     # http://127.0.0.1:8000
 ```
 
@@ -31,7 +31,7 @@ CLI: `python -m app.cli init-db | import-csv FILE | scan | dispatch`.
 | `personalize.py` | Builds verified-facts context, renders templates, `guard()` blocks invented facts, optional Claude polish. |
 | `services.py` | Pipeline: `scan_and_draft`, `approve`, `reject`, `edit`, `cancel`, `dispatch_due`. Every step writes `AuditLog`. |
 | `models.py` | Staff, Template, Rule, Draft (unique per staff+occasion+year), AuditLog. |
-| `importer.py` | CSV -> Staff upsert by `employee_id`. Header names matched via `ALIASES`. |
+| `importer.py` | CSV or Excel (all sheets with a staff id column) -> Staff upsert by `employee_id`. Header names matched via `ALIASES`. Only ACTIVE/ON_LEAVE staff are active. |
 | `graph.py` | Microsoft Graph `sendMail`. Mock mode (`MOCK_OUTBOX`) unless all four `GRAPH_*` vars set. |
 | `auth.py` | DEV ONLY header auth (`X-Role`). Entra ID login not built yet. |
 | `main.py` | FastAPI routes under `/api`, serves the dashboard at `/`. |
@@ -61,7 +61,7 @@ Done: milestone engine, rules, templates, guarded drafting, approval flow, sched
 
 Not done (in rough priority):
 1. Entra ID (Azure AD) login to replace header auth in `auth.py`. Set `AUTH_DEV=0` afterwards.
-2. Confirm CSV columns with the real file; add missing header aliases in `importer.py`.
+2. `staff_dataset.xlsx` is MOCK data. Its `retirement_date` is a made-up rule (last day of the month of the 60th birthday). With real data, take retirement dates from HR; never compute them in code. After a person's retirement date, `milestones.occasions_for` drops birthdays and anniversaries.
 3. Live Graph send test with IT-approved app registration and a test mailbox (never real staff first).
 4. Background worker (scan + dispatch on a schedule) instead of manual buttons/CLI.
 5. Alembic migrations (tables are created on startup now).

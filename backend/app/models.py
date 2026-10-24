@@ -20,6 +20,9 @@ class Staff(Base):
     employee_id: Mapped[str] = mapped_column(String(32), unique=True)
     name: Mapped[str] = mapped_column(String(120))
     preferred_name: Mapped[str | None] = mapped_column(String(120), default=None)
+    title: Mapped[str | None] = mapped_column(String(20), default=None)  # Dr., Prof., Mr., Ms.
+    category: Mapped[str | None] = mapped_column(String(30), default=None)  # FACULTY, NON_TEACHING, ADMIN
+    employment_status: Mapped[str | None] = mapped_column(String(20), default=None)
     email: Mapped[str] = mapped_column(String(200))
     department: Mapped[str] = mapped_column(String(120))
     designation: Mapped[str] = mapped_column(String(120))

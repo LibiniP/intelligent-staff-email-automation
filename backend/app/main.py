@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from . import services
 from .auth import User, require
-from .db import Base, SessionLocal, engine, get_db
+from .db import Base, SessionLocal, engine, ensure_columns, get_db
 from .milestones import occasions_for
 from .personalize import check_template
 from .models import AuditLog, Draft, Rule, Staff, Template
@@ -18,6 +18,7 @@ from .seed import seed_defaults, seed_demo_staff
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(engine)
+    ensure_columns(engine)
     with SessionLocal() as db:
         seed_defaults(db)
     yield
