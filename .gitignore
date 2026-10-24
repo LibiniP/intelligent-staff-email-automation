@@ -218,3 +218,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Real staff data must never be committed
+data/*
+!data/sample_staff.csv
+!data/.gitkeep
+*.xlsx
+*.db
+
+# graphify: commit graph.json, GRAPH_REPORT.md, graph.html only
+graphify-out/cache/
+graphify-out/.graphify_*
+graphify-out/cost.json
