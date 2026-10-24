@@ -95,3 +95,23 @@ Then `.venv/bin/uvicorn app.main:app --reload`, or `python -m app.cli scan` / `d
 | `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`, `GRAPH_SENDER_MAILBOX` | Outlook sending. Empty = mock mode |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | AI wording polish. Empty = templates only |
 | `AUTH_DEV`, `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID` | Login (Entra ID login not built yet) |
+
+## Screenshots
+
+Demo data only (fake staff).
+
+**Drafts: review, edit, approve or reject**
+
+![Drafts](docs/screenshots/1-drafts.png)
+
+**Upcoming occasions**
+
+![Upcoming](docs/screenshots/2-upcoming.png)
+
+**Analytics**
+
+![Analytics](docs/screenshots/3-analytics.png)
+
+**Audit log**
+
+![Audit](docs/screenshots/4-audit.png)
